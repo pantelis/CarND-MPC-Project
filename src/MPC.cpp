@@ -6,14 +6,9 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
-size_t N = 30;  // prediction horizon
+size_t N = 20;  // prediction horizon
 double dt = 0.1; // dt = td = 100ms
 
-// Number of states
-size_t N_s = 4;
-
-// Number of actuators
-size_t N_a = 2;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -27,7 +22,7 @@ size_t N_a = 2;
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
-double ref_v = 35;
+double ref_v = 100;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -51,7 +46,7 @@ public:
     typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
 
     void operator()(ADvector &fg, const ADvector &vars) {
-        // TODO: implement MPC
+
         // `fg` a vector of the cost constraints, `vars` is a vector of variable values (state & actuators)
         // NOTE: You'll probably go back and forth between this function and
         // the Solver function below.
@@ -68,15 +63,15 @@ public:
 
         for (int t = 0; t < N - 1; t++) {
             // actuator costs - we dont throttle or steer at the destination point so the loop is from [0, N-2].
-            fg[0] += CppAD::pow(vars[delta_start + t], 2); // penalize the magnitude of the steering command
-            fg[0] += CppAD::pow(vars[a_start + t], 2); // penalize the magnitude of the throttle command
+            fg[0] += 1000 * CppAD::pow(vars[delta_start + t], 2); // penalize the magnitude of the steering command
+            fg[0] += 1000 * CppAD::pow(vars[a_start + t], 2); // penalize the magnitude of the throttle command
         }
 
         // rate of change of actuator related costs
         for (int t = 0; t < N - 2; t++) {
             // Multiplying the cost of large angle differences by a value > 1 will influence the solver
             // into keeping sequential steering values closer together.
-            fg[0] += 500 * CppAD::pow(vars[delta_start + t] - vars[delta_start + t - 1], 2); // penalize the rate of change of steering
+            fg[0] += CppAD::pow(vars[delta_start + t] - vars[delta_start + t - 1], 2); // penalize the rate of change of steering
             fg[0] += CppAD::pow(vars[a_start + t] - vars[a_start + t - 1], 2); // penalize the rate of change of throttle
         }
 
@@ -120,8 +115,8 @@ public:
             AD<double> delta0 = vars[delta_start + t - 1];
             AD<double> a0 = vars[a_start + t - 1];
 
-            AD<double> f0 = coeffs[0] + coeffs[1] * x0;
-            AD<double> psides0 = CppAD::atan(coeffs[1]);
+            AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * x0 * x0 + coeffs[3] * x0 * x0 * x0;
+            AD<double> psides0 = CppAD::atan(coeffs[1] + 2 * coeffs[2]* x0 + 3 * coeffs[3] * x0 * x0);
 
             // Here's `x` to get you started.
             // The idea here is to constraint this value to be 0.
@@ -145,28 +140,22 @@ public:
 //
 // MPC class definition implementation.
 //
-MPC::MPC() {}
+MPC::MPC(size_t ns, size_t na) {this->Ns=ns; this->Na=na;}
 
 MPC::~MPC() {}
 
 vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     bool ok = true;
-    //size_t i;
-
-    this->Ns = 4;
-    this->Na = 2;
 
     typedef CPPAD_TESTVECTOR(double) Dvector;
 
-    // TODO: Set the number of model variables (includes both states and inputs).
-    // For example: If the state is a 4 element vector, the actuators is a 2
-    // element vector and there are 10 timesteps. The number of variables is:
-    //
-    // 4 * 10 + 2 * 9
-    // N timesteps == N - 1 actuations
+
+    // If the state is a Ns element vector, the actuators is a Na
+    // element vector and there are N timesteps, the number of variables is:
+    // NOTE: N timesteps == N - 1 actuations
     size_t n_vars = N * Ns + (N - 1) * Na;
 
-    // TODO: Set the number of constraints
+    // Set the number of constraints
     size_t n_constraints = N * Ns;
 
     // Initial value of the independent variables.
@@ -181,15 +170,19 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     double y = state[1];
     double psi = state[2];
     double v = state[3];
+    double cte = state[4];
+    double epsi = state[5];
 
     vars[x_start] = x;
     vars[y_start] = y;
     vars[psi_start] = psi;
     vars[v_start] = v;
+    vars[cte_start] = cte;
+    vars[epsi_start] = epsi;
 
+    // Set lower and upper limits for variables.
     Dvector vars_lowerbound(n_vars);
     Dvector vars_upperbound(n_vars);
-    // TODO: Set lower and upper limits for variables.
 
     // Set all non-actuators upper and lowerlimits
     // to the max negative and positive values.
@@ -227,12 +220,16 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     constraints_lowerbound[y_start] = y;
     constraints_lowerbound[psi_start] = psi;
     constraints_lowerbound[v_start] = v;
+    constraints_lowerbound[cte_start] = cte;
+    constraints_lowerbound[epsi_start] = epsi;
 
 
     constraints_upperbound[x_start] = x;
     constraints_upperbound[y_start] = y;
     constraints_upperbound[psi_start] = psi;
     constraints_upperbound[v_start] = v;
+    constraints_upperbound[cte_start] = cte;
+    constraints_upperbound[epsi_start] = epsi;
 
     // object that computes objective and constraints
     FG_eval fg_eval(coeffs);
@@ -270,10 +267,17 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     auto cost = solution.obj_value;
     std::cout << "Cost " << cost << std::endl;
 
-    // TODO: Return the first actuator values. The variables can be accessed with
+    // Return the first actuator values. The variables can be accessed with
     // `solution.x[i]`.
-    //
-    // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
-    // creates a 2 element double vector.
-    return {solution.x[delta_start], solution.x[a_start]};
+    vector<double> optimal_control;
+    optimal_control.push_back(solution.x[delta_start]);
+    optimal_control.push_back(solution.x[a_start]);
+
+    for (int i=0; i < N; i++)
+    {
+        optimal_control.push_back(solution.x[x_start+i]);
+        optimal_control.push_back(solution.x[y_start+i]);
+
+    }
+    return optimal_control;
 }

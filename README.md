@@ -3,6 +3,11 @@ Self-Driving Car Engineer Nanodegree Program
 
 ---
 
+## Summary of the Model Predictive Controller
+
+### Model
+The MPC controller is 
+
 ## Dependencies
 
 * cmake >= 3.5

@@ -2,12 +2,45 @@
 Self-Driving Car Engineer Nanodegree Program
 
 ---
+[//]: # (Image References)
+
+[model-predictive-control]: model-predictive-control.png "Model Predictive Control"
 
 ## Summary of the Model Predictive Controller
 
 ### Model
-The MPC controller is 
+The MPC controller arrangement in the car takes as input:
 
+* 16 waypoints coordinates in a Global Coordinate System (GCS)
+* the car coordinates in GCS
+* the feedback controlled variables - yaw and velocity. 
+
+It produces, based on a kinematic model of the car, optimal manipulated variables u - the steering and throttle that minimize the 
+cost a quadratic function of cross track error (CTE) as well as velocity deviations from a nominal velocity value over a horizon of N*dt seconds.   
+The optimized variables (steering value and throttle) are constrained based on the implementation of the car simulator by lower and upper bounds. 
+
+![model-predictive-control][model-predictive-control]
+
+
+To fit a 3rd order polynomial line onto the set of received waypoints expressed in the GCS, the coordinates are transformed in the local (car) coordinmate system (LCS). 
+This transformation is expressed as: x' = Rx+t where x is the LCS coordinates and x' are the GCS coordinates. t is the distance between the car and the GCS
+origin. Given that R rotation matrix R = [cos(psi)  -sin(psi); sin(psi) cos(psi)] is orthonomal we have RR^T=I and solving for 
+x = R^T(x'-t). The LCS coordinates are set accordingly in the code. 
+
+The CTE and yaw error were then much more easily to be estimated as the car coordinates are at LCS(0,0). The CTE and yaw error 
+are then included as part of the state: (x, y, yaw, velocity, CTE and yaw error). In the cost function, the reference 
+state costs, absolute actuation costs and differential actuation costs were included with coefficients that were manually tuned. 
+More specifically the car is able to travel through the track with 100ms latency using the following coefficients that correspond 
+to quadratic errors:
+(cte, yaw error, relative velocity, steering magnitude, throttle magnitude, rate of change of steering, rate of change of throttle) = (1, 1, 1, 1000, 1000, 1, 1)
+
+In the optimization problem we selected N=20 and dt=0.1ms. 2sec was an intuitively selected value based on the use case 
+(racing track) and was deemed to be a good tradeoff between computational complexity and "look ahead" ability. 
+
+With these parameters we didnt have to deal explicitly with the 100ms latency although if we set the throttle constraint 
+with smaller coefficients at higher speeds the car does not complete the track. 
+ 
+ 
 ## Dependencies
 
 * cmake >= 3.5

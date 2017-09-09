@@ -101,14 +101,14 @@ int main() {
                     // psi and velocity
                     double psi = j[1]["psi"];
                     double v = j[1]["speed"];
-                    double steer = j[1]["steering_angle"];
+                    v *= 0.44704; //convert miles per hour to meter per second!!!
+                    double delta = j[1]["steering_angle"];
                     double throttle = j[1]["throttle"];
-
 
                     auto num_waypoints = static_cast<unsigned int>(ptsx.size());
 
-                    Eigen::VectorXd waypoints_x_lcs(num_waypoints);
-                    Eigen::VectorXd waypoints_y_lcs(num_waypoints);
+                    Eigen::VectorXd waypoints_x_lcs = Eigen::VectorXd::Zero(num_waypoints);
+                    Eigen::VectorXd waypoints_y_lcs = Eigen::VectorXd::Zero(num_waypoints);
 
                     // express the waypoints relative to the car (x,y)
                     for (int i=0; i < num_waypoints; i++){
@@ -118,7 +118,6 @@ int main() {
 
                         waypoints_x_lcs[i] = translate_x * cos(psi) + translate_y * sin(psi);
                         waypoints_y_lcs[i] = translate_y * cos(psi) - translate_x * sin(psi);
-
                     }
 
                     // Fit a 3rd order polynomial to the above x and y coordinates
@@ -126,28 +125,34 @@ int main() {
 
 
                     // Predict the state variables at t+100ms (latency)
-                    Eigen::VectorXd state(6);
+                    Eigen::VectorXd state = Eigen::VectorXd::Zero(6);
                     double latency_ms = 100;
-                    double latency = latency_ms/1000;
+                    double latency = latency_ms/1000.;
 
-                    state[0] = v * cos(psi) * latency; // x:
-                    state[1] = 0; // y: car coordinates were transformed such that the car moves along the x axis in the model
-                    state[2] = (v / 2.67)  * (-steer) * latency;
-                    state[3] = v + throttle * latency;
+                    // Calculate the current cte
+                    /* cte = desired_y - actual_y
+                            = polyeval(coeffs,px)-py
+                            = polyeval(coeffs,0) because px=py=0 */
+                    double cte = polyeval(coeffs, 0);
 
-                    // Calculate the cte
-                    double cte = polyeval(coeffs, state[0]);
-
-                    // Calculate the epsi
-                    //double epsi = psi - atan(coeffs[1] + 2 * px * coeffs[2] + 3 * coeffs[3] * pow(px,2));
+                    // Calculate the current epsi
+                    // epsi =  actual psi-desired psi
+                    // double epsi = psi - atan(coeffs[1] + 2 * px * coeffs[2] + 3 * coeffs[3] * pow(px,2));
+                    // = -atan(coeffs[1]), because px=py=0
                     double epsi = -atan(coeffs[1]);
 
+                    delta = -delta; // change of sign because turning left is negative sign in simulator but positive yaw for MPC
+                    state[0] = v * cos(psi) * latency; // x: px + v * cos(psi) * latency;
+                    state[1] = 0; // y: py + v * sin(psi) * latency; // y: car coordinates were transformed such that the car moves along the x axis in the model
+                    state[2] = (v / 2.67)  * delta * latency; // psi: psi + (v / 2.67)  * delta * latency;
+                    state[3] = v + throttle * latency;
                     state[4] = cte + v * sin(epsi) * latency;
                     state[5] = epsi + state[2];
 
+                    // Call ipopt solver
                     auto vars = mpc.Solve(state, coeffs);
 
-                    double steering_value = - vars[0]/deg2rad(25.);
+                    double steering_value = -vars[0]/deg2rad(25.);
                     double throttle_value = vars[1];
 
                     json msgJson;

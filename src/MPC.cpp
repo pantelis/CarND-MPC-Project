@@ -56,8 +56,8 @@ public:
         double epsi_factor = 1;
         double v_dev_factor = 1;
         double steering_factor = 1000;
-        double throttle_factor = 200;
-        double steering_rate_factor = 1;
+        double throttle_factor = 150;
+        double steering_rate_factor = 1000;
         double throttle_rate_factor = 1;
 
         fg[0] = 0;

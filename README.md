@@ -32,15 +32,52 @@ are then included as part of the state: (x, y, yaw, velocity, CTE and yaw error)
 state costs, absolute actuation costs and differential actuation costs were included with coefficients that were manually tuned. 
 More specifically the car is able to travel through the track with 100ms latency using the following coefficients that correspond 
 to quadratic errors:
-(cte, yaw error, relative velocity, steering magnitude, throttle magnitude, rate of change of steering, rate of change of throttle) = (1, 1, 1, 1000, 1000, 1, 1)
+(cte, yaw error, relative velocity, steering magnitude, throttle magnitude, rate of change of steering, rate of change of throttle) = (1, 1, 1, 1000, 200, 1, 1)
+
 
 In the optimization problem we selected N=20 and dt=0.1ms. 2sec was an intuitively selected value based on the use case 
-(racing track) and was deemed to be a good tradeoff between computational complexity and "look ahead" ability. 
+(racing track). Intuitively thinking if one plots the uncertainty of the predictive distribution based on simple 
+kinematic models we expect to start from small variances and towards the end of the horizon to observe significant 
+predictive uncertainty. So it makes sense to limit the N*dt to few seconds and given the sharp turns of he track, 2 seconds were 
+selected. dt was then selected based on the quantization error. dt < 100ms would approximate the target trajectory 
+better but it will result in large N for the same time horizon of 2secs - this will increase computational complexity. 
+ 
 
-With these parameters we didnt have to deal explicitly with the 100ms latency although if we set the throttle constraint 
-with smaller coefficients at higher speeds the car does not complete the track. 
+To deal with latency between the controller and the plant (car), we used the kinematic equations as shown below, to predict the state variables 100ms into the future 
+before sending them to MPC. 
  
  
+```objectivec
+// Fit a 3rd order polynomial to the above x and y coordinates
+auto coeffs = polyfit(waypoints_x_lcs, waypoints_y_lcs, 3);
+
+
+// Predict the state variables at t+100ms (latency)
+Eigen::VectorXd state(6);
+double latency_ms = 100;
+double latency = latency_ms/1000;
+
+state[0] = v * cos(psi) * latency; // x:
+state[1] = 0; // y: car coordinates were transformed such that the car moves along the x axis in the model
+state[2] = (v / 2.67)  * (-steer) * latency;
+state[3] = v + throttle * latency;
+
+// Calculate the cte
+double cte = polyeval(coeffs, state[0]);
+
+// Calculate the epsi
+//double epsi = psi - atan(coeffs[1] + 2 * px * coeffs[2] + 3 * coeffs[3] * pow(px,2));
+double epsi = -atan(coeffs[1]);
+
+state[4] = cte + v * sin(epsi) * latency;
+state[5] = epsi + state[2];
+
+auto vars = mpc.Solve(state, coeffs);
+
+double steering_value = - vars[0]/deg2rad(25.);
+double throttle_value = vars[1];
+
+```
 ## Dependencies
 
 * cmake >= 3.5

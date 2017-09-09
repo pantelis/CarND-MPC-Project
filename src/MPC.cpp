@@ -22,7 +22,7 @@ double dt = 0.1; // dt = td = 100ms
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
-double ref_v = 100;
+double ref_v = 50;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -51,28 +51,37 @@ public:
         // NOTE: You'll probably go back and forth between this function and
         // the Solver function below.
 
+        // Cost hyperparameters
+        double cte_factor = 1;
+        double epsi_factor = 1;
+        double v_dev_factor = 1;
+        double steering_factor = 1000;
+        double throttle_factor = 200;
+        double steering_rate_factor = 1;
+        double throttle_rate_factor = 1;
+
         fg[0] = 0;
 
         // Costs function components: reference state costs, absolute actuation costs and differential actuation costs
         for (int t = 0; t < N; t++) {
             // reference state related costs
-            fg[0] += CppAD::pow(vars[cte_start + t], 2);
-            fg[0] += CppAD::pow(vars[epsi_start + t], 2);
-            fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2); // penalize stopping the car - use a assumed reference velocity
+            fg[0] += cte_factor * CppAD::pow(vars[cte_start + t], 2); //cte
+            fg[0] += epsi_factor * CppAD::pow(vars[epsi_start + t], 2); //epsi
+            fg[0] += v_dev_factor * CppAD::pow(vars[v_start + t] - ref_v, 2); // penalize stopping the car - use a assumed reference velocity
         }
 
         for (int t = 0; t < N - 1; t++) {
             // actuator costs - we dont throttle or steer at the destination point so the loop is from [0, N-2].
-            fg[0] += 1000 * CppAD::pow(vars[delta_start + t], 2); // penalize the magnitude of the steering command
-            fg[0] += 1000 * CppAD::pow(vars[a_start + t], 2); // penalize the magnitude of the throttle command
+            fg[0] += steering_factor * CppAD::pow(vars[delta_start + t], 2); // penalize the magnitude of the steering command
+            fg[0] += throttle_factor * CppAD::pow(vars[a_start + t], 2); // penalize the magnitude of the throttle command
         }
 
         // rate of change of actuator related costs
         for (int t = 0; t < N - 2; t++) {
             // Multiplying the cost of large angle differences by a value > 1 will influence the solver
             // into keeping sequential steering values closer together.
-            fg[0] += CppAD::pow(vars[delta_start + t] - vars[delta_start + t - 1], 2); // penalize the rate of change of steering
-            fg[0] += CppAD::pow(vars[a_start + t] - vars[a_start + t - 1], 2); // penalize the rate of change of throttle
+            fg[0] += steering_rate_factor * CppAD::pow(vars[delta_start + t] - vars[delta_start + t - 1], 2); // penalize the rate of change of steering
+            fg[0] += throttle_rate_factor * CppAD::pow(vars[a_start + t] - vars[a_start + t - 1], 2); // penalize the rate of change of throttle
         }
 
         //

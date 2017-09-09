@@ -101,6 +101,9 @@ int main() {
                     // psi and velocity
                     double psi = j[1]["psi"];
                     double v = j[1]["speed"];
+                    double steer = j[1]["steering_angle"];
+                    double throttle = j[1]["throttle"];
+
 
                     auto num_waypoints = static_cast<unsigned int>(ptsx.size());
 
@@ -118,19 +121,29 @@ int main() {
 
                     }
 
-
                     // Fit a 3rd order polynomial to the above x and y coordinates
                     auto coeffs = polyfit(waypoints_x_lcs, waypoints_y_lcs, 3);
 
+
+                    // Predict the state variables at t+100ms (latency)
+                    Eigen::VectorXd state(6);
+                    double latency_ms = 100;
+                    double latency = latency_ms/1000;
+
+                    state[0] = v * cos(psi) * latency; // x:
+                    state[1] = 0; // y: car coordinates were transformed such that the car moves along the x axis in the model
+                    state[2] = (v / 2.67)  * (-steer) * latency;
+                    state[3] = v + throttle * latency;
+
                     // Calculate the cte
-                    double cte = polyeval(coeffs, 0);
+                    double cte = polyeval(coeffs, state[0]);
 
                     // Calculate the epsi
                     //double epsi = psi - atan(coeffs[1] + 2 * px * coeffs[2] + 3 * coeffs[3] * pow(px,2));
                     double epsi = -atan(coeffs[1]);
 
-                    Eigen::VectorXd state(6);
-                    state << 0, 0, 0, v, cte, epsi;
+                    state[4] = cte + v * sin(epsi) * latency;
+                    state[5] = epsi + state[2];
 
                     auto vars = mpc.Solve(state, coeffs);
 
